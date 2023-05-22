@@ -2,14 +2,19 @@ import time
 from datetime import datetime
 from typing import NamedTuple, Optional
 import logging
-
 import openai
+from jinja2 import Environment
+import tiktoken
+import csv
 
+TOKENIZER_MODEL_ALIAS_MAP = {
+    "gpt-4": "gpt-3.5-turbo",
+    "gpt-35-tunro": "gpt-3.5-turbo",
+}
 EDIT_MODELS = [
     "text-davinci-edit-001",
     "code-davinci-edit-001",
 ]
-
 CHAT_MODELS = [
     "gpt-4",
     "gpt-4-32k",
@@ -17,11 +22,51 @@ CHAT_MODELS = [
 ]
 
 
+class PromptConstructor:
+    def __init__(
+        self,
+        template_path: str,
+        model: str,
+        max_length: int=4000,
+        context_block_seperator: str='',
+    ):
+        
+        with open(template_path, "r") as f:
+            self.template = f.read()
+        self.token_counter = lambda s: self.count_tokens(s, model_name=model)
+        self.max_length = max_length
+        self.context_block_seperator = context_block_seperator
+
+        self._env = Environment()
+
+    def count_tokens(self, input_str: str, model_name: str) -> int:
+        if model_name in TOKENIZER_MODEL_ALIAS_MAP:
+            model_name = TOKENIZER_MODEL_ALIAS_MAP[model_name]
+        encoding = tiktoken.encoding_for_model(model_name)
+        num_tokens = len(encoding.encode(input_str))
+        return num_tokens, encoding
+
+    def construct(
+        self,
+        **kwargs,
+    ):
+        template = self._env.from_string(self.template)
+        prompt = template.render(
+            **kwargs,
+        )
+        prompt_len, _ = self.token_counter(prompt)
+        remaining = self.max_length - prompt_len
+
+        if remaining < 0:
+            raise ValueError(f"Context length exceeded. Max allowed context length is {self.max_length} tokens.")
+            # return None
+
+        return prompt
+
 class OpenAIResponse(NamedTuple):
     text: str
     finish_reason: str
     success: bool
-
 
 class OpenAIModelHandler:
     def __init__(
@@ -51,12 +96,7 @@ class OpenAIModelHandler:
         self.openai_api_base = openai_api_base
         self.openai_api_version = openai_api_version
 
-    def get_response(
-            self,
-            input: str | list[str],
-            instructions: Optional[str | list[str]] = None,
-            **kwargs
-        ) -> list[OpenAIResponse] | list[list[OpenAIResponse]]:
+    def get_response(self, input, instructions=None, **kwargs):
         
         config = self.config | kwargs
         if self.openai_api_type == "azure":
@@ -110,8 +150,6 @@ class OpenAIModelHandler:
                 prompt_batch = list(zip(input[i:i+self.prompt_batch_size], instructions[i:i+self.prompt_batch_size]))
 
             logging.info(f"Current Batch - {i} to {i+self.prompt_batch_size} ...")
-
-
 
             attempt_count = 0
             current_timeout = self.timeout
@@ -232,6 +270,7 @@ class OpenAIModelHandler:
                     break
 
                 except Exception as e:
+                    print('here 4 ', e )
                     logging.warning(f"Error - {e}")
                     for _ in range(self.prompt_batch_size):
                             results.append(
@@ -256,3 +295,13 @@ class OpenAIModelHandler:
                 [OpenAIResponse(**rr) for rr in r]
                 for r in results
             ]
+
+class Log():
+    '''Class to log the results of the experiment in human readable format'''
+    def __init__(self):
+        pass
+
+    def create_logs(self, log_file_path, rows):
+        with open(log_file_path, "w") as csvfile: 
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerows(rows)

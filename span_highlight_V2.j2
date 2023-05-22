@@ -1,0 +1,31 @@
+Analyze the given code and highlight required code span(s) for the CodeQL query titled "{{ query_name }}" with description - {{ description }}
+
+Given code of a file, if required code span(s) are present, highlight them. Do not highlight, if no required code span(s) are present. The following are some examples of highlighting required code span(s).
+Example of code with required span(s)
+```python
+{{ positive_context }}
+```
+
+Code span(s) to be highlighted
+```python
+{% for span in positive_spans %}
+{{span}}
+{% endfor %}
+```
+
+Example of code with no required code span(s)
+```python
+{{ negative_context }}
+```
+
+Code span(s) to be highlighted
+```python
+```
+
+Code of file
+```python
+{{ input_code }}
+```
+
+Code span(s) to be highlighted
+```python
